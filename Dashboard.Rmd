@@ -1,0 +1,465 @@
+---
+title: "Cuadro de Mandos"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+runtime: shiny
+---
+
+```{r,echo=FALSE}
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE,
+  echo=FALSE
+)
+```
+
+```{r, echo = FALSE,message = FALSE,warning = FALSE}
+library(MASS)
+library(shinydashboard)
+library(shiny)
+library(datasets)
+library(highcharter) 
+library(fpp3)
+library(RColorBrewer)
+library(openxlsx)  
+library(leaflet)  
+library(geojsonio)
+library(plotly)
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r,message=FALSE,echo=FALSE} 
+data <-  read.csv("TMDB_movie_dataset_v11.csv") %>%
+  as_tibble()
+
+data <- data %>%
+  filter(status== "Released") %>%
+  select(title, vote_average,vote_count, release_date, revenue, adult,budget, original_language, popularity, genres, production_companies, production_countries, spoken_languages) %>%
+  filter(revenue != 0) %>%
+  na.omit() %>%
+  filter(across(everything(), ~ !is.na(.) & !is.na(trimws(.)) & trimws(.) != "")) %>%
+  filter(year(release_date) < 1800 | year(release_date) >= 1960) %>%
+  filter(year(release_date) < 2023 | year(release_date) > 2024)
+
+
+data$production_companies <- sub(",.*", "", data$production_companies)
+
+# Vector con las abreviaturas de idiomas
+language_initial <- c("en", "ko", "fr", "ja", "it", "es", "pl", "pt", "hi", "tr", "da", "de", "cn", "id", "zh", 
+                      "sv", "el", "sr", "fa", "th", "ar", "nb", "ru", "no", "la", "nl", "hu", "he", "te", "ro", 
+                      "tn", "fi", "mk", "uk", "et", "ka", "ta", "ml", "vi", "cs", "is", "sw", "sk", "tl", "mi", 
+                      "ca", "ku", "iu", "ms", "bm", "sl", "hr", "am", "xh", "mr", "bn", "bg", "ur", "eu", "gl", 
+                      "kn", "pa", "cy", "hy", "lt", "xx", "my", "dz", "af", "tg", "gu", "ne", "si", "lv", "be", 
+                      "mn", "sq", "dv", "lg", "ht", "az", "bs", "km")
+
+# Vector con los nombres completos de los idiomas en inglés
+language_name <- c("English", "Korean", "French", "Japanese", "Italian", "Spanish", "Polish", "Portuguese", 
+                   "Hindi", "Turkish", "Danish", "German", "Chinese", "Indonesian", "Chinese", "Swedish", 
+                   "Greek", "Serbian", "Persian", "Thai", "Arabic", "Norwegian Bokmål", "Russian", "Norwegian", 
+                   "Latin", "Dutch", "Hungarian", "Hebrew", "Telugu", "Romanian", "Tswana", "Finnish", 
+                   "Macedonian", "Ukrainian", "Estonian", "Georgian", "Tamil", "Malayalam", "Vietnamese", 
+                   "Czech", "Icelandic", "Swahili", "Slovak", "Tagalog", "Maori", "Catalan", "Kurdish", 
+                   "Inuktitut", "Malay", "Bambara", "Slovenian", "Croatian", "Amharic", "Xhosa", "Marathi", 
+                   "Bengali", "Bulgarian", "Urdu", "Basque", "Galician", "Kannada", "Punjabi", "Welsh", "Armenian", 
+                   "Lithuanian", "Unknown", "Burmese", "Dzongkha", "Afrikaans", "Tajik", "Gujarati", "Nepali", 
+                   "Sinhalese", "Latvian", "Belarusian", "Mongolian", "Albanian", "Divehi", "Ganda", "Haitian", 
+                   "Azerbaijani", "Bosnian", "Khmer")
+
+# Reemplazar las iniciales por los nombres completos
+data <- data %>% 
+  mutate(original_language = recode(original_language, !!!setNames(language_name, language_initial)))
+geoj <- geojson_read("https://ctim.es/AEDV/data/geo_countries.geojson",  what = "sp")
+
+geoj_tibble <- geoj %>%
+  as_tibble()
+
+datos_separados <- data %>%
+  separate_rows(production_countries, sep = ", ")
+
+datos_separados <- datos_separados %>%
+  group_by(production_countries) %>%
+  summarize(
+    count = n()
+  )
+
+data.geoj <- geoj_tibble %>%
+  left_join(datos_separados, join_by(ADMIN== production_countries)) 
+
+dataselect <- data %>%
+  select(revenue, budget)
+
+#GENRES, RELEASE_DATE Y COUNT
+datos_separados2 <- data %>%
+  separate_rows(genres, sep = ", ")  %>%
+  mutate(release_date = as.numeric(substr(release_date, 1, 4)))
+
+movies_genres.tsibble <- datos_separados2 %>%
+  group_by(genres, release_date) %>%
+  summarize(count = n()) %>%  
+  tsibble(index = release_date, 
+          key=genres) %>%
+  fill_gaps() %>%
+  as_tsibble()
+
+genre <- levels(as.factor(movies_genres.tsibble$genres))
+year <- levels(as.factor(movies_genres.tsibble$release_date))
+
+dispersion <- data %>%
+  select(popularity, revenue, budget, vote_count, vote_average )
+```
+
+
+
+Attribute analysis
+=====================================  
+
+Row 
+-------------------------------------
+### Porcentaje de varianza explicada por la componentes principales en relacion a compañias
+    
+```{r}
+
+renderPlotly({
+pca1 <- data %>%
+    group_by(production_companies) %>%
+    summarize(
+      revenue = sum(revenue),
+      budget= sum(budget),
+      vote_count = sum(vote_count),
+      vote_average = mean(vote_average),
+      popularity= mean(popularity)
+    ) %>%
+    column_to_rownames(var="production_companies") 
+
+pca1 <- prcomp(pca1,scale = TRUE)
+p <- tibble(
+  label=paste("PC",1:length(pca1$sdev)), # creación etiquetas para el eje horizontal
+  varPercent = pca1$sdev^2/sum(pca1$sdev^2) * 100 # cálculo porcentaje de varianza explicada
+) %>%
+  ggplot(aes(x=label,y=varPercent)) + # creación gráfico de barras interactivo
+    geom_bar(stat = "identity") +
+    labs(x= "Componentes Principales", 
+         y= "Porcentaje varianza explicada")
+ggplotly(p) 
+
+})
+
+```
+
+### Matriz de correlación 
+
+```{r}
+highcharter::renderHighchart({
+matriz <- data %>%
+  select(vote_average,vote_count,revenue,budget,popularity) %>%
+  cor(use='complete.obs') %>% # cálculo matriz correlación eliminando NA previamente
+  hchart() # dibujo interactivo matriz de correlación
+matriz
+})
+``` 
+
+### Porcentaje de varianza explicada por la componentes principales en relacion a paises
+    
+```{r}
+
+renderPlotly({
+datos_separados <- data %>%
+    separate_rows(production_countries, sep = ", ") 
+
+pca2 <- datos_separados %>%
+  group_by(production_countries) %>%
+    summarize(
+      revenue = sum(revenue),
+      budget= sum(budget),
+      vote_count = sum(vote_count),
+      vote_average = mean(vote_average),
+      popularity= mean(popularity)
+    ) %>%
+    column_to_rownames(var="production_countries") 
+
+
+pca2 <- prcomp(pca2,scale = TRUE)
+p <- tibble(
+  label=paste("PC",1:length(pca2$sdev)), # creación etiquetas para el eje horizontal
+  varPercent = pca2$sdev^2/sum(pca2$sdev^2) * 100 # cálculo porcentaje de varianza explicada
+) %>%
+  ggplot(aes(x=label,y=varPercent)) + # creación gráfico de barras interactivo
+    geom_bar(stat = "identity") +
+    labs(x= "Componentes Principales", 
+         y= "Porcentaje varianza explicada")
+ggplotly(p) 
+
+})
+
+```
+
+
+   
+Row 
+-------------------------------------
+   
+### Grafico de dispersión con las dos primeras componentes en relacion a compañias
+    
+```{r}
+highcharter::renderHighchart({
+datos_separados <- data %>%
+    separate_rows(production_countries, sep = ", ") 
+
+pca2 <- datos_separados %>%
+  group_by(production_countries) %>%
+    summarize(
+      revenue = sum(revenue),
+      budget= sum(budget),
+      vote_count = sum(vote_count),
+      vote_average = mean(vote_average),
+      popularity= mean(popularity)
+    ) %>%
+    column_to_rownames(var="production_countries") 
+
+
+pca2 <- prcomp(pca2,scale = TRUE)
+  hchart(pca2)
+})
+
+```
+
+### Grafico de dispersión con las dos primeras componentes en relacion a compañias
+    
+```{r}
+highcharter::renderHighchart({
+pca1 <- data %>%
+    group_by(production_companies) %>%
+    summarize(
+      revenue = sum(revenue),
+      budget= sum(budget),
+      vote_count = sum(vote_count),
+      vote_average = mean(vote_average),
+      popularity= mean(popularity)
+    ) %>%
+    column_to_rownames(var="production_companies") 
+
+pca1 <- prcomp(pca1,scale = TRUE)
+  hchart(pca1)
+})
+
+```
+
+
+
+World Map
+=====================================  
+
+```{r} 
+leaflet::renderLeaflet({
+ 
+etiquetas <- paste(data.geoj$ADMIN, "</strong><br>Número de peliculas grabadas: ", data.geoj$count)  %>%
+ lapply(htmltools::HTML)
+
+pal <- colorNumeric("YlOrRd", data.geoj$count, n =9)
+
+geoj %>%
+  leaflet() %>%  
+  setView(lng = 5, lat = 22, zoom = 2) %>% 
+    addPolygons(
+    fillColor = ~pal(data.geoj$count), 
+    weight = 2,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlightOptions = highlightOptions( 
+      weight = 2,
+      color = rgb(0.2,0.2,0.2),
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE
+    ),
+    label = etiquetas 
+  ) %>% 
+  addLegend("bottomleft", pal = pal, values = data.geoj$count,
+    title = "Cantidad de peliculas",
+    labFormat = function(type, cuts, p) {
+          n = length(cuts) 
+          as.character(round((as.integer(cuts)[-n] + as.integer(cuts)[-1])/2))
+        },
+    opacity = 1
+  )
+})
+
+```
+Seasonality
+=====================================  
+
+Column {.sidebar data-width=230}
+--------------------------------------------------
+
+```{r}
+selectInput(
+  "genre1", # nombre de uso interno del campo. Se accede al campo haciendo input$country1
+  label = "Genre 1:", # etiqueta del campo para presentar en el cuadro de mando
+  choices = genre, # vector con las opciones para seleccionar 
+  selected = "Action" # la opción seleccionada por defecto 
+)
+
+selectInput(
+  "genre2", # nombre de uso interno del campo. Se accede al campo haciendo input$country1
+  label = "Genre 2:", # etiqueta del campo para presentar en el cuadro de mando
+  choices = genre, # vector con las opciones para seleccionar 
+  selected = "Comedy" # la opción seleccionada por defecto 
+)
+
+
+selectInput(
+  "genre3", # nombre de uso interno del campo. Se accede al campo haciendo input$country1
+  label = "Genre 3:", # etiqueta del campo para presentar en el cuadro de mando
+  choices = genre, # vector con las opciones para seleccionar 
+  selected = "Adventure" # la opción seleccionada por defecto 
+)
+
+selectInput(
+  "genre4", # nombre de uso interno del campo. Se accede al campo haciendo input$country1
+  label = "Genre 4:", # etiqueta del campo para presentar en el cuadro de mando
+  choices = genre, # vector con las opciones para seleccionar 
+  selected = "Drama" # la opción seleccionada por defecto 
+)
+
+selectInput(
+  "startyear", 
+  label = "Start year:",
+  choices = year, 
+  selected = "1960"
+)
+
+selectInput(
+  "endyear", 
+  label = "End year:",
+  choices = year, 
+  selected = "2021"
+)
+```
+
+
+Column 
+-----------------------------------------------------------------------
+
+###
+
+```{r}
+highcharter::renderHighchart({
+ movies_genres.tsibble %>% 
+    filter(genres == input$genre1) %>% 
+    filter(release_date >= input$startyear & release_date <= input$endyear) %>% 
+    index_by(release_date) %>%
+    arrange(release_date) %>%
+    highcharter::hchart("line",hcaes(x = release_date, y = count, group = genres))
+})
+
+```
+
+
+###
+
+```{r}
+highcharter::renderHighchart({
+ movies_genres.tsibble %>% 
+    filter(genres == input$genre3) %>% 
+    filter(release_date >= input$startyear & release_date <= input$endyear) %>% 
+    index_by(release_date) %>%
+    arrange(release_date) %>%
+    highcharter::hchart("line",hcaes(x = release_date, y = count, group = genres))
+})
+```
+
+
+Column 
+-----------------------------------------------------------------------
+
+
+###
+
+```{r}
+highcharter::renderHighchart({
+ movies_genres.tsibble %>% 
+    filter(genres == input$genre2) %>% 
+    filter(release_date >= input$startyear & release_date <= input$endyear) %>% 
+    index_by(release_date) %>%
+    arrange(release_date) %>%
+    highcharter::hchart("line",hcaes(x = release_date, y = count, group = genres))
+})
+```
+
+
+###
+
+```{r}
+highcharter::renderHighchart({
+ movies_genres.tsibble %>% 
+    filter(genres == input$genre4) %>% 
+    filter(release_date >= input$startyear & release_date <= input$endyear) %>% 
+    index_by(release_date) %>%
+    arrange(release_date) %>%
+    highcharter::hchart("line",hcaes(x = release_date, y = count, group = genres))
+})
+```
+
+
+Indicator Comparison 
+=====================================     
+   
+Column {.sidebar data-width=230}
+--------------------------------------------------
+
+```{r}
+selectInput(
+  "x", 
+  label = "Indicator 1:",
+  choices = colnames(dispersion), 
+  selected = "budger"
+)
+
+
+selectInput(
+  "y", 
+  label = "Indicator 2:",
+  choices = colnames(dispersion), 
+  selected = "revenue"
+)
+
+```
+
+
+Column
+--------------------------------------------------
+
+### Scaled Indicators Comparison
+
+```{r} 
+renderPlotly({
+  tb <- tibble(
+    title = data$title,
+      x = data[[which(names(data)==input$x)]],
+      y = data[[which(names(data)==input$y)]]
+  )
+
+  
+  p <- tb %>%
+    ggplot(aes(x, y, label=title)) +
+    geom_point() +  
+      scale_x_continuous(trans = 'log2') + # se transforma la variable x con log
+  geom_smooth(method = lm, se = FALSE)+ # dibujo recta de regresión 
+  scale_y_continuous(labels = scales::comma) + # Formateamos el eje y con números enteros y separadores de miles
+  scale_x_continuous(labels = scales::comma) + # Formateamos el eje x con números enteros y separadores de miles
+  theme_minimal() +
+        labs(x= input$x, y= input$y)
+
+  
+  ggplotly(p)
+})
+
+
+```
+
+
+

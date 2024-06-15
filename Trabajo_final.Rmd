@@ -1,0 +1,641 @@
+---
+title: "Peliculas"
+author: "Alejandra Ruiz de Adana Fleitas"
+output: html_document
+---
+
+
+```{r,echo=FALSE}
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE,
+  echo=FALSE
+)
+```
+```{r}
+if (!require(RColorBrewer)) install.packages('RColorBrewer') 
+library(RColorBrewer)
+if (!require(plotly)) install.packages('plotly') 
+library(plotly)
+if (!require(urca)) install.packages('urca') 
+library(urca)
+if (!require(GGally)) install.packages('GGally') 
+library(GGally)
+if (!require(pxR)) install.packages('pxR') 
+library(pxR)
+if (!require(fpp3)) install.packages('fpp3') 
+library(fpp3)
+if (!require(tidyverse)) install.packages('tidyverse') 
+library(tidyverse)
+if (!require(wordcloud)) install.packages('wordcloud') 
+library(wordcloud)
+if (!require(openxlsx)) install.packages('openxlsx')
+library(openxlsx)
+if (!require(patchwork)) install.packages('patchwork') 
+library(patchwork)
+if (!require(ggplot2)) install.packages('ggplot2') 
+library(ggplot2)
+if (!require(highcharter)) install.packages('highcharter') 
+library(highcharter)
+if (!require(leaflet)) install.packages('leaflet') 
+library(leaflet)
+if (!require(geojsonio)) install.packages('geojsonio') 
+library(geojsonio) 
+```
+[Enlace cuadro de mandos](http://10.22.143.222:3838/sample-apps/a2447/Dashboard.Rmd)
+\n
+
+[Drive](https://drive.google.com/drive/folders/1q2iKrlxsXHXx8xjkz0vp-SZ4tb2NbODQ?usp=sharing)
+
+\n
+## Introducción 
+  Este trabajo se va a centrar en el estudio de las peliculas estrenadas en el cine desde 1800 hasta 2024.
+Para este estudio se van a utilizar los datos de The Movie Database (TMDB) los cuales se han cogido de Kaggle una plataforma en línea donde se comparten conjuntos de datos para diversos proyectos de análisis y aprendizaje automático. TMDB es reconocido por su amplia base de datos cinematográfica, que incluye información detallada sobre películas como sinopsis, reparto, puntuaciones de usuarios y fechas de lanzamiento. Kaggle, por su parte, ofrece una infraestructura para que los científicos de datos, investigadores y entusiastas del aprendizaje automático puedan colaborar en proyectos, competir en desafíos y compartir datos, facilitando así el acceso a conjuntos de datos como el de TMDB para su análisis.
+
+\n
+\n
+
+Durante el análisis exploratorio inicial, se observaron varias incidencias relevantes que requirieron atención. En primer lugar, se identificó una columna llamada "status", que indica el estado de la película, como cancelada, en producción, en postproducción, en planificación, estrenada o rumoreada. Se notó que, salvo las películas estrenadas, la información relacionada con la fecha de estreno (release_date), ganancias (revenue), presupuesto (budget), entre otros, podría no estar disponible. Por lo tanto, se decidió filtrar el conjunto de datos para incluir solo las películas que ya han sido estrenadas. Además, se encontró que la mayoría de las películas anteriores a 1960 carecían de datos importantes, como presupuesto, ganancias y países de producción, lo que llevó a una limpieza adicional para seleccionar únicamente las películas a partir de 1960. También se enfrentó el desafío de que los datos incluían información hasta el año 2024, pero al no haber completado ese año, se consideró que los datos para ese año podrían no ser totalmente significativos, por lo que se optó por filtrar los datos hasta el año 2023. Se realizaron operaciones de limpieza adicionales, eliminando las filas con valores faltantes y NA. Además, se estandarizaron los nombres de las compañías de producción para quedarse solo con las palabras antes de la primera coma en la columna "production_companies", lo que permitió agrupar de manera más precisa las películas bajo una misma compañía. Asimismo, se modificaron las iniciales de los idiomas por sus nombres completos en la columna "original_language" para mejorar la legibilidad. Finalmente, se redujo el conjunto de datos a las columnas relevantes para el estudio, que incluyen:
+
+- vote_average: El promedio de votos dados a la película.
+
+- vote_count: El número total de votos recibidos por la película.
+
+- release_date: La fecha de lanzamiento de la película.
+
+- revenue: Los ingresos generados por la película.
+
+- adult: Una variable que indica si la película es para adultos o no.
+
+- budget: El presupuesto de la película.
+
+- original_language: El idioma original en el que se produjo la película.
+
+- popularity: La popularidad de la película.
+
+- genres: Los géneros de la película.
+
+- production_companies: Las compañías de producción involucradas en la creación de la película.
+
+- production_countries: Los países donde se produjo la película.
+
+- spoken_languages: Los idiomas hablados en la película.
+
+## Cargamos los datos
+```{r}
+data <-  read.csv("TMDB_movie_dataset_v11.csv") %>%
+  as_tibble()
+```
+
+Una vez hecho todo esto se nos quedaria una tabla de 14709 filas y 13 columnas
+```{r}
+data <- data %>%
+  filter(status== "Released") %>%
+  select(title, release_date, revenue, vote_count, vote_average, adult,budget, original_language, popularity, genres, production_companies, production_countries, spoken_languages) %>%
+  filter(revenue != 0) %>%
+  na.omit() %>%
+  filter(across(everything(), ~ !is.na(.) & !is.na(trimws(.)) & trimws(.) != "")) %>%
+  filter(year(release_date) < 1800 | year(release_date) >= 1960) %>%
+  filter(year(release_date) < 2023 | year(release_date) > 2024)
+
+
+data$production_companies <- sub(",.*", "", data$production_companies)
+
+# Vector con las abreviaturas de idiomas
+language_initial <- c("en", "ko", "fr", "ja", "it", "es", "pl", "pt", "hi", "tr", "da", "de", "cn", "id", "zh", 
+                      "sv", "el", "sr", "fa", "th", "ar", "nb", "ru", "no", "la", "nl", "hu", "he", "te", "ro", 
+                      "tn", "fi", "mk", "uk", "et", "ka", "ta", "ml", "vi", "cs", "is", "sw", "sk", "tl", "mi", 
+                      "ca", "ku", "iu", "ms", "bm", "sl", "hr", "am", "xh", "mr", "bn", "bg", "ur", "eu", "gl", 
+                      "kn", "pa", "cy", "hy", "lt", "xx", "my", "dz", "af", "tg", "gu", "ne", "si", "lv", "be", 
+                      "mn", "sq", "dv", "lg", "ht", "az", "bs", "km")
+
+# Vector con los nombres completos de los idiomas en inglés
+language_name <- c("English", "Korean", "French", "Japanese", "Italian", "Spanish", "Polish", "Portuguese", 
+                   "Hindi", "Turkish", "Danish", "German", "Chinese", "Indonesian", "Chinese", "Swedish", 
+                   "Greek", "Serbian", "Persian", "Thai", "Arabic", "Norwegian Bokmål", "Russian", "Norwegian", 
+                   "Latin", "Dutch", "Hungarian", "Hebrew", "Telugu", "Romanian", "Tswana", "Finnish", 
+                   "Macedonian", "Ukrainian", "Estonian", "Georgian", "Tamil", "Malayalam", "Vietnamese", 
+                   "Czech", "Icelandic", "Swahili", "Slovak", "Tagalog", "Maori", "Catalan", "Kurdish", 
+                   "Inuktitut", "Malay", "Bambara", "Slovenian", "Croatian", "Amharic", "Xhosa", "Marathi", 
+                   "Bengali", "Bulgarian", "Urdu", "Basque", "Galician", "Kannada", "Punjabi", "Welsh", "Armenian", 
+                   "Lithuanian", "Unknown", "Burmese", "Dzongkha", "Afrikaans", "Tajik", "Gujarati", "Nepali", 
+                   "Sinhalese", "Latvian", "Belarusian", "Mongolian", "Albanian", "Divehi", "Ganda", "Haitian", 
+                   "Azerbaijani", "Bosnian", "Khmer")
+
+# Reemplazar las iniciales por los nombres completos
+data <- data %>% 
+  mutate(original_language = recode(original_language, !!!setNames(language_name, language_initial)))
+
+data
+```
+
+## Analisis
+### Los 10 generos que más dinero recaudan
+Primero se tiene que tratar con el hecho de que la columna "genres" tiene en cada fila más de un genero, ya que una pelicula puede tener más de un genero. Asi que lo primero que vamos a hacer es separar estos generos para que haya uno por fila con el fin de ver que genero de peliculas recauda más.
+```{r}
+# Separar las filas con múltiples géneros
+datos_separados <- data %>%
+  separate_rows(genres, sep = ", ") 
+
+# Contar las veces que se repite cada género
+p <- datos_separados %>%
+  group_by(genres) %>%
+  summarize(
+    total_ingresos = sum(revenue)
+  ) %>%
+  arrange(desc(total_ingresos)) %>%
+  slice(1:10) %>%
+  ggplot( aes(x = reorder(genres, total_ingresos), y = total_ingresos, fill = genres)) +
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "PiYG") + # Utiliza una paleta de colores
+  scale_y_continuous(labels = scales::comma) + # Formateamos el eje y con números enteros y separadores de miles
+  theme_minimal() +
+  labs(title = "Ingresos totales por género de película",
+       x = "Género",
+       y = "Ingresos totales") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggplotly(p)
+
+```
+Es fascinante observar cómo, al analizar el gráfico, las películas de acción y aventura destacan claramente como las que generan mayores ingresos. Este fenómeno sugiere que el público tiene una gran atracción hacia este género debido a su capacidad para ofrecer emociones intensas y experiencias espectaculares en la pantalla grande.
+
+Por otro lado, es interesante notar que las películas de animación, aunque populares, se sitúan en el extremo opuesto del espectro en términos de ingresos.
+\n
+
+### Las 10 peliculas que más dinero han recaudado y sus generos
+```{r}
+p <- data %>%
+  arrange(desc(revenue)) %>%
+  slice(1:10) %>% # Seleccionar las 10 películas con más ingresos
+  ggplot(aes(x = revenue, y = title, fill = genres)) +
+  geom_col() +
+  scale_x_continuous(labels = scales::comma) + # Formateamos el eje x con números enteros y separadores de miles
+  scale_fill_brewer(palette = "PiYG") +
+  labs(title = "Relación entre películas con más ingresos, nombre y género",
+       x = "Ingresos",
+       y = "Película") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8)) +
+    theme(axis.text.x = element_text(angle = 89, hjust = 1))+
+  guides(fill = guide_legend(title = "Género"))
+ggplotly(p)
+
+```
+Es interesante notar cómo la película "Avatar" se destaca como la más taquillera de todos los tiempos. Este logro resalta el impacto significativo que la película tuvo en la industria del cine, tanto en términos de recaudación como de impacto cultural.
+
+Además, es notable observar que el género de acción es el más recurrente entre las 10 películas más taquilleras. Esto sugiere que las películas de acción tienen un atractivo masivo entre el público, lo que se refleja en su éxito en taquilla. La combinación de emocionantes escenas de acción, efectos especiales impresionantes y narrativas cautivadoras parece resonar fuertemente con los espectadores de todo el mundo.
+\n
+
+### Ingresos totales por compañia de producción
+```{r}
+p <- data %>%
+  group_by(production_companies) %>%
+  summarize(total_revenue = sum(revenue)) %>%
+  arrange(desc(total_revenue)) %>%
+  slice(1:10) %>%
+  ggplot(aes(x = reorder(production_companies,total_revenue), y = total_revenue, fill = production_companies)) +
+    geom_bar(stat = "identity") +
+    scale_y_continuous(labels = scales::comma) + # Formateamos el eje y con números enteros y separadores de miles
+    scale_fill_brewer(palette = "PiYG") + # Paleta de colores
+    theme_minimal() +
+    labs(title = "Ingresos totales por compañía de producción",
+         x = "Compañía de Producción",
+         y = "Ingresos Totales") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotar
+ggplotly(p)
+```
+Al observar este gráfico, queda claro que la compañía que ha recaudado más dinero en la historia es Walt Disney Pictures. Un detalle interesante es que las 10 compañías que encabezan la lista de recaudación son todas estadounidenses. Esto, junto con otros datos que veremos a continuación, acentua el dominio del cine por parte de Estados Unidos.
+\n
+
+### Los 10 idiomas en los que más peliculas se han producido
+```{r}
+data %>%
+  group_by(original_language)  %>% 
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  slice(1:10) %>%
+  ggplot(aes(x = "", y = count, fill = original_language)) +
+  geom_col() +
+  theme_minimal() +
+  scale_fill_brewer(palette = "PiYG") +
+  labs(title = "Idiomas en los que más peliculas se han producido") +
+  geom_text(aes(x = 1.6, label = ""), position = position_stack(vjust = 0.5)) + 
+  coord_polar(theta = "y")
+```
+
+El gráfico circular resalta claramente la predominancia del idioma inglés en la producción cinematográfica, con una proporción notablemente superior en comparación con otros idiomas, siendo el chino el siguiente en la lista.
+
+Este dominio del inglés en el mundo del cine refleja la influencia cultural y económica de los países de habla inglesa en la industria cinematográfica a nivel global. El inglés se ha establecido como el idioma predominante en el cine internacional, facilitando la distribución y el alcance de las películas producidas en países de habla inglesa en todo el mundo.
+\n
+
+### Los 10 idiomas más y menos hablados en las peliculas
+Primero se tiene que tratar con el hecho de que la columna "spoken_languages" tiene en cada fila más de un idioma, ya que en una pelicula se puede hablar más de un idioma. Asi que lo primero que vamos a hacer es separar estos idiomas para que haya uno por fila con el fin de ver que idioma se habla más y menos en las peliculas.
+```{r}
+# Separar las filas con múltiples géneros
+datos_separados <- data %>%
+  separate_rows(spoken_languages, sep = ", ") 
+
+p1 <- datos_separados %>%
+  group_by(spoken_languages)  %>% 
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  slice(1:10) %>%
+  ggplot(aes(x = "", y = count, fill = spoken_languages)) +
+  geom_col() +
+  theme_minimal() +
+  scale_fill_brewer(palette = "PiYG") +
+  geom_text(aes(x = 1.6, label = ""), position = position_stack(vjust = 0.5)) + 
+  coord_polar(theta = "y")
+
+p2 <- datos_separados %>%
+  group_by(spoken_languages)  %>% 
+  summarise(count = n()) %>%
+  arrange(count) %>%
+  slice(1:10) %>%
+  ggplot(aes(x = "", y = count, fill = spoken_languages)) +
+  geom_col() +
+  theme_minimal() +
+  scale_fill_brewer(palette = "PiYG") +  
+  geom_text(aes(x = 1.6, label = ""), position = position_stack(vjust = 0.5)) + 
+  coord_polar(theta = "y")
+
+wrap_plots(p1, p2, ncol = 2, nrow = 1)
+```
+
+Cuando hablamos de idiomas en películas, nos referimos a todos los idiomas hablados durante la película en su idioma original, ya sea que se hayan utilizado durante toda la película o solo por unos segundos. Una vez más, observamos que el inglés es el idioma más hablado, seguido en este caso por el ruso, mientras que los idiomas menos hablados apenas se mencionan una vez en todas las películas de nuestro conjunto de datos.
+\n
+
+### Peliculas clasificadas como peliculas para adultos
+```{r}
+p <- data %>% 
+  group_by(adult) %>%
+  summarize(
+    count = n()
+  ) %>%
+  ggplot(aes(x=adult,y=count,fill=adult)) +
+    geom_bar(stat = "identity")  +
+    scale_fill_manual(values = c("darkseagreen3","deeppink3")) +  
+    labs(title = "Peliculas clasificadas para adultos") +
+  theme_minimal()
+
+ggplotly(p)
+```
+Al hablar de películas para adultos nos referimos a películas clasificadas como "+18", que muestran desnudez fuerte, violencia extrema, muertes extremadamente violentas, lenguaje ofensivo, derramamiento de sangre, imágenes intensas frecuentes, escenas intensamente fuertes, insultos intensos, así como el consumo de alcohol, drogas y tabaco. Es importante destacar que esta clasificación se ha basado en lo establecido en Estados Unidos, ya que puede variar según el país. Sin embargo, observamos que la gran mayoría de las películas en nuestro conjunto de datos son aptas para todos los públicos.
+\n
+
+### Comparación del presupuesto y las ganacias
+En el cuadro de mandos, además de visualizar el mapa interactivo, podremos observar más información y funcionalidades
+```{r}
+p <- data %>%
+  ggplot(aes(x = budget, y = revenue, label=title)) +
+  geom_point() +  
+  scale_x_continuous(trans = 'log2') + # se transforma la variable x con log
+  geom_smooth(method = lm, se = FALSE)+ # dibujo recta de regresión 
+  scale_y_continuous(labels = scales::comma) + # Formateamos el eje y con números enteros y separadores de miles
+  scale_x_continuous(labels = scales::comma) + # Formateamos el eje x con números enteros y separadores de miles
+  theme_minimal() +
+  labs(x = "Presupuesto", y = "Ingresos", title = "Comparación entre Presupuesto e Ingresos")
+ggplotly(p)
+```
+El diagrama de dispersión revela que la mayoría de las películas se sitúan en un rango de ingresos relativamente bajo, considerando tanto los presupuestos como los ingresos en miles y millones de dólares. Se observa que son pocas las películas que logran superar la marca de los 2.000.000.000 de dólares en ingresos, y muchas de ellas han requerido una inversión significativa para alcanzar este nivel de ganancias. Esta distribución resalta la tendencia de que el éxito financiero en la industria cinematográfica está asociado frecuentemente con una inversión substancial, aunque no garantiza resultados excepcionales.
+\n
+
+### Comparación entre presupuesto por géneros y por popularidad
+Antes de programas el mapa de calor se definen los límites y etiquetas para los diferentes rangos de presupuesto, ya que si no hacemos esto al ser muchos datos seran ilegibles. Luego se dividen las filas que contienen múltiples géneros y crea grupos de presupuesto para cada película. Posteriormente se agrupan los datos por género y categoría de presupuesto, calculando la suma de popularidad para cada grupo. Esto establece las bases para la creación de un mapa de calor que visualizará la popularidad de las películas en función de estas dos variables.
+```{r}
+limites <- c(0,100000,500000, 1000000, 10000000, 1000000000 )
+etiqueta <- c("0-100.000", "100.000-500.000", "500.000-1.000.000", "1.000.000-10.000.000", "10.000.000- 100.000.000")
+
+
+# Separar las filas con múltiples géneros
+datos_separados <- data %>%
+  separate_rows(genres, sep = ", ")
+
+datos_separados$budget_groups <- cut(datos_separados$budget, breaks=limites, labels = etiqueta, include.lowest = TRUE)
+
+
+# Agrupar los datos por género y categoría de presupuesto y calcular la suma de popularidad
+datos_agrupados <- datos_separados %>%
+  group_by(genres, budget_groups) %>%
+  summarise(total_popularity = sum(popularity))
+
+
+
+# Gráfico de azulejos
+p <- datos_agrupados %>%
+  ggplot(aes(x = budget_groups, y = genres, fill = total_popularity)) + 
+  geom_tile(color = "lightblue", lwd = 0.5, linetype = 1) + 
+  scale_fill_gradientn(colors = brewer.pal(9, 'YlOrRd')) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Comparación entre presupuesto por géneros y por popularidad")
+
+# Convertir el gráfico a plotly
+ggplotly(p, tooltip = c("budget_groups", "genres", "total_popularity"))
+```
+Observamos que las películas con presupuestos más altos pertenecen a géneros más populares, como acción o aventura, sugiere una tendencia importante en la industria cinematográfica. Este fenómeno refleja la estrategia de los estudios de cine y productores de invertir recursos significativos en géneros que históricamente han demostrado ser atractivos para el público.
+\n
+
+### Mapa interactivo
+Para crear un mapa interactivo, primero descargaremos un archivo GeoJSON que contendrá la información geoespacial necesaria para generar el mapa. Luego, convertiremos este GeoJSON en un tibble utilizando las herramientas adecuadas de R y lo almacenaremos en una variable. Este paso nos permitirá manipular los datos geoespaciales de manera más conveniente.
+
+Una vez que tengamos nuestro tibble con los datos geoespaciales, realizaremos un left_join con nuestros datos existentes. Esto nos permitirá combinar la información geoespacial con nuestros datos de interés, lo que nos facilitará etiquetar el mapa y asignar colores según la variable que deseemos visualizar.
+
+En el cuadro de mandos, también lo pordemos observar.
+```{r}
+geoj <- geojson_read("countries.geojson",  what = "sp")
+
+geoj_tibble <- geoj %>%
+  as_tibble()
+```
+```{r}
+datos_separados <- data %>%
+  separate_rows(production_countries, sep = ", ")
+datos_separados <- datos_separados %>%
+  group_by(production_countries) %>%
+  summarize(
+    count = n()
+  )
+
+data.geoj <- geoj_tibble %>%
+  left_join(datos_separados, join_by(ADMIN== production_countries)) 
+
+
+etiquetas <- paste(data.geoj$ADMIN, "</strong><br>Número de peliculas grabadas: ", data.geoj$count)  %>%
+ lapply(htmltools::HTML)
+
+pal <- colorNumeric("YlOrRd", data.geoj$count, n =9)
+
+geoj %>%
+  leaflet() %>%  
+  setView(lng = 5, lat = 22, zoom = 2) %>% 
+    addPolygons(
+    fillColor = ~pal(data.geoj$count), 
+    weight = 2,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlightOptions = highlightOptions( 
+      weight = 2,
+      color = rgb(0.2,0.2,0.2),
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE
+    ),
+    label = etiquetas 
+  ) %>% 
+  addLegend("bottomleft", pal = pal, values = data.geoj$count,
+    title = "Cantidad de peliculas",
+    labFormat = function(type, cuts, p) {
+          n = length(cuts) 
+          as.character(round((as.integer(cuts)[-n] + as.integer(cuts)[-1])/2))
+        },
+    opacity = 1
+  )
+```
+Podemos observar que el país en el que más peliculas se graba es Estados Unidos grabandose tantas peliculas que actua como un "outlier", haciendo que los otros paises aunque se hayan grabado 48 peliculas o 500 se vean practicamente del mismo color.
+
+Esta situación resalta el monopolio que Estados Unidos ostenta en la industria del cine. Este hecho refuerza la percepción de que la industria cinematográfica está altamente centralizada en Estados Unidos, lo que puede tener implicaciones en la diversidad cultural y en la representación de diversas narrativas en el cine a nivel global.
+
+
+\n
+### Series temporales
+A continuación vamos a ver series temporales. 
+Comenzaremos por convertir la columna "release_date" a un formato que represente el año y el mes. Posteriormente, crearemos tsibbles para facilitar el análisis de las series temporales
+
+```{r}
+data <- data %>%
+    mutate(release_date = yearmonth(as.Date(release_date)))
+
+# COUNT Y RELEASE_DATE
+movies.tsibble <- data %>%
+  group_by(release_date) %>%
+  summarize(
+    count = n()
+  ) %>%  tsibble(index = release_date) %>%
+  as_tsibble()%>%
+  fill_gaps()
+
+
+
+#REVENUE Y RELEASE_DATE
+revenue.tsibble <- data %>%
+  group_by(release_date) %>%
+  summarize(
+    revenue = sum(revenue)
+  ) %>%  tsibble(index = release_date) %>%
+  as_tsibble()%>%
+  fill_gaps()
+
+
+
+
+#BUDGET Y RELEASE_DATE
+budget.tsibble <- data %>%
+  group_by(release_date) %>%
+  summarize(
+    budget = sum(budget)
+  ) %>%  tsibble(index = release_date) %>%
+  as_tsibble()%>%
+  fill_gaps()
+
+
+
+#GENRES, RELEASE_DATE Y COUNT
+datos_separados <- data %>%
+  separate_rows(genres, sep = ", ") 
+
+movies_genres.tsibble <- datos_separados %>%
+  group_by(genres, release_date) %>%
+  summarize(
+    count = n()
+  ) %>%  tsibble(index = release_date, key = genres) %>%
+  as_tsibble()%>%
+  fill_gaps()
+
+```
+
+\n
+#### Número de peliculas por año
+```{r}
+p1 <- movies.tsibble %>% 
+autoplot() +
+labs(title= "Numeró de peliculas por años")
+ggplotly(p1)
+```
+Se observa un crecimiento exponencial en los estrenos de películas desde 1960 hasta 2014. Este incremento es notable, pero a partir de 2014, con la popularización de las plataformas de streaming, se evidencia una disminución en el número de estrenos, alcanzando su punto más bajo durante la pandemia del COVID-19.
+
+Aunque se ha registrado una recuperación desde entonces, es evidente que la industria cinematográfica está experimentando un declive gradual. Este fenómeno sugiere que el cine está perdiendo relevancia progresivamente, con una tendencia a la baja en la cantidad de estrenos.
+
+\n
+#### Ganacias de peliculas por años
+```{r}
+p2 <- revenue.tsibble %>%
+  autoplot() + 
+  labs(title = "Ganancias de pelicula por años")
+ggplotly(p2)
+```
+Durante el periodo comprendido entre 1960 y 2016, se observa un crecimiento exponencial en los estrenos de películas. Este incremento es notable, pero a partir de 2016, con la popularización de las plataformas de streaming y la tendencia a la reducción en la producción de películas para el cine, se evidencia una disminución en el número de estrenos, alcanzando su punto más bajo durante la pandemia del COVID-19.
+
+A pesar de esta tendencia a la baja en la cantidad de estrenos, es interesante notar que las ganancias generadas por las películas han experimentado un aumento. Este fenómeno sugiere que, aunque el número de estrenos ha disminuido, la rentabilidad de las películas sigue siendo alta, aunque no como las de antaño.
+
+\n
+#### Prepuestos de peliculas por años
+```{r}
+p <- budget.tsibble %>%
+  autoplot() + 
+  labs(title = "Presupuestos de pelicula por años")
+ggplotly(p)
+
+```
+Al observar la evolución del presupuesto de las películas a lo largo del tiempo, es evidente que las películas más antiguas contaban con presupuestos considerablemente más bajos en comparación con las más modernas. Este aumento en el presupuesto puede atribuirse a una variedad de factores, como avances tecnológicos, inflación y demanda del público por producciones más elaboradas.
+
+Durante la cuarentena, se produjo una notable disminución en el presupuesto de las películas, principalmente debido a la interrupción en los lanzamientos cinematográficos. La falta de estrenos en cines resultó en una reducción de los ingresos potenciales, lo que llevó a una disminución en la inversión en nuevas producciones.
+
+Sin embargo, a partir de finales de 2020, se observa nuevamente un crecimiento en el presupuesto de las películas.
+
+\n
+#### Generos de peliculas por años
+En el cuadro de mandos, además de visualizar el la serie temporal, podremos observar más información y funcionalidades
+```{r}
+p2 <- movies_genres.tsibble %>%
+  autoplot() + 
+  labs(title = "Generos de pelicula por años")
+ggplotly(p2)
+
+```
+Se observa que a lo largo de los años, las películas más estrenadas han sido principalmente del género drama. Sin embargo, aunque las películas de acción también tienen una presencia notable, su número es considerablemente menor en comparación con las de drama.
+
+Curiosamente, a pesar de esta diferencia en la cantidad de películas, las de acción generan ingresos significativamente más altos. Esto sugiere que, aunque el género de acción puede tener menos lanzamientos, su atractivo entre el público es considerablemente alto, lo que se refleja en sus ganancias.
+
+\n
+#### Número de películas por meses
+```{r}
+p1 <- movies.tsibble %>% 
+gg_season(count, period = "year") +
+scale_y_continuous(labels = scales::comma) + # Formateamos el eje y con números enteros y separadores de miles
+labs(title= "Número de peliculas por meses")
+ggplotly(p1)
+
+#Movies
+movies.tsibble %>% 
+  gg_subseries(count) +
+  labs(title= "Número de peliculas por meses")
+
+```
+Como podemos observar, encontramos estacionalidad en los estrenos de películas, siendo septiembre y octubre los meses en los que más películas se estrenan. Esto se puede deber a una variedad de factores, como estrategias de lanzamiento de las productoras, eventos de la industria cinematográfica como festivales o premiaciones, y patrones de consumo del público. 
+
+\n
+#### Ganacias de peliculas por meses
+```{r}
+p2 <- revenue.tsibble %>% 
+gg_season(revenue, period = "year") +
+scale_y_continuous(labels = scales::comma) + # Formateamos el eje y con números enteros y separadores de miles
+labs(title= "Ganancias de peliculas por meses")
+ggplotly(p2)
+
+#Revenue
+revenue.tsibble %>% 
+  gg_subseries(revenue) +
+  scale_y_continuous(labels = scales::comma) %>% # Formateamos el eje y con números enteros y separadores de miles
+  labs(title= "Ganancias de peliculas por meses")
+```
+
+Con respecto a las ganancias por películas, los meses que más dinero se recaudan son junio y diciembre, mientras que los que menos son enero y agosto. Esto se puede deber a varios factores, como la temporada de vacaciones y festividades. Por ejemplo, junio y diciembre suelen ser meses de lanzamiento de grandes producciones cinematográficas, aprovechando las vacaciones de verano y las fiestas de fin de año, lo que puede aumentar la asistencia a los cines y, por ende, las ganancias. Por otro lado, enero y agosto suelen ser meses de menor actividad en términos de lanzamientos cinematográficos debido a factores como la vuelta a la rutina después de las vacaciones de fin de año y el periodo de transición entre temporadas de estrenos. 
+
+
+
+
+\n
+### Predicciones de proximas peliculas en los proximos 2 años
+```{r}
+movies.tsibble.arima <- movies.tsibble %>%
+  model(ARIMA(count))
+
+movies.tsibble.arima.prediction <- movies.tsibble.arima %>%
+  forecast(h = "2 years")
+
+p <- movies.tsibble.arima.prediction %>%
+  autoplot(movies.tsibble) +
+  labs(title="Peliculas predicción")
+ 
+ ggplotly(p)
+```
+
+Es alentador observar que las proyecciones para los próximos dos años indican un crecimiento en la cantidad de películas estrenadas, a pesar de que no se alcance los niveles previos a la pandemia de COVID-19. Este aumento anticipado sugiere una recuperación gradual de la industria cinematográfica después de los desafíos enfrentados durante la pandemia. 
+\n
+
+### Análisis de atributos
+En el cuadro de mandos, además de visualizar este análisis de atributo, podremos observar más información.
+
+\n
+#### Matriz de correlación
+```{r}
+matriz <- data %>%
+  select(vote_average,vote_count,revenue,budget,popularity) %>%
+  cor(use='complete.obs') %>% # cálculo matriz correlación eliminando NA previamente
+  hchart() # dibujo interactivo matriz de correlación
+matriz
+```
+En la matriz de correlación observamos el valor de correlación para cada par de atributos. Un valor positivo de la correlación nos indica que cuando aumenta el valor de un atributo, aumenta el valor del otro y cuanto más cerca de 1 es la correlación más perfecta es esa relación y mejor se ajustan los valores de los atributos a la recta de regresión. Cuando el valor de la correlación es negativo cuando aumenta el valor de un atributo disminuye el valor del otro y cuanto más cerca está de -1 la correlación más perfecta es esa relación. Cuando el valor de la correlación esté cercano a cero no existe una relación lineal clara entre ambos atributos. En el caso particular de esta colección de atributos, como es de esperar, se observa una correlación positiva y más o menos alta, 0.76, entre los ingresos y los votos hechos por pelicula. También encontramos una relación similar con ingresos por pelicula y presupuestos. No se observa  ninguna correlación negativa, ni valores que sean 0 por lo que aunque sea poca todas las variables tiene correlación.
+
+
+\n
+#### Análisis de componentes principales (ACP) para las compañias de producción
+```{r}
+pca1 <- data %>%
+    group_by(production_companies) %>%
+    summarize(
+      revenue = sum(revenue),
+      budget= sum(budget),
+      vote_count = sum(vote_count),
+      vote_average = mean(vote_average),
+      popularity= mean(popularity)
+    ) %>%
+    column_to_rownames(var="production_companies") 
+pca1 <- prcomp(pca1,scale = TRUE)
+pca1
+```
+La función prcomp(pca1,scale = TRUE) nos calcula las componentes principales que representan nuevas variables obtenidas como combinaciones lineales de las variables originales. Estas combinaciones lineales se optimizan para que la varianza de las componentes principales vaya siendo la máxima posible. El parámetro scale = TRUE en la llamada a la función prcomp se utiliza para indicar que las variables originales se normalizan (se les resta su media y se divide por su desviación tipica) de tal forma que todas las variables originales salen en igualdad de condiciones al calcular las componentes principales. Los coeficientes (o pesos) de cada variable original en las componentes principales vienen dados por la autovectores de una matriz y como si cambiamos el signo a un autovector sigue siendo un autovector, cambiar el signo de estos coeficientes no es relevante. Al imprimir el resultado  vemos los coeficientes que determinan el peso de cada indicador en las componentes principales. Por ejemplo en la PC1, la variable revenue es la que más peso tiene y en la PC2 el mayor peso lo encontramos en la variable budget. Como la vote_average tiene muy poco peso en las dos primeras componentes, podemos concluir que la vote_average es, de las variables observadas, la que menos capacidad tiene para discriminar entre compañias
+
+```{r}
+p <- tibble(
+  label=paste("PC",1:length(pca1$sdev)), # creación etiquetas para el eje horizontal
+  varPercent = pca1$sdev^2/sum(pca1$sdev^2) * 100 # cálculo porcentaje de varianza explicada
+) %>%
+  ggplot(aes(x=label,y=varPercent)) + # creación gráfico de barras interactivo
+    geom_bar(stat = "identity") +
+    labs(x= "Componentes Principales", 
+         y= "Porcentaje varianza explicada")
+ggplotly(p) 
+
+```
+Esta gráfica nos permite observar la varianza explicada por cada componente principal respecto al total de varianzas acumuladas por todas las variables. Observamos que la PC1 explica casi el 60% de la varianza total, y a partir de la PC1 ya baja bastante y si utilizamos el criterio de quedarnos solo con las componentes principales que expliquen al menos el 2% de la varianza total, entonces nos quedaríamos con las primeras 3 componentes. Es decir habríamos conseguido reducir las 5 variables originales a 3 sin que la información global contenida en los atributos originales se vea afectada. El precio que hay que pagar es que las nuevas variables son más difíciles de interpretar.
+
+A continuación hacemos un gráfico donde se representan el diagrama de dispersión de las dos primeras componentes PC1 y PC2 así como el peso de cada indicador en dichas componentes.
+```{r}
+pca1 <- data %>%
+    group_by(production_companies) %>%
+    summarize(
+      revenue = sum(revenue),
+      budget= sum(budget),
+      vote_count = sum(vote_count),
+      vote_average = mean(vote_average),
+      popularity= mean(popularity)
+    ) %>%
+    column_to_rownames(var="production_companies") 
+
+pca1 <- prcomp(pca1,scale = TRUE)
+hchart(pca1)
+```
+En este diagrama de dispersión de los valores de las dos primeras componentes también se ilustra con vectores el peso de cada atributo original en las dos componentes. El tamaño de estos vectores nos indica la magnitud del peso de dicho atributo en el cálculo de las dos primeras componentes, y su orientación nos indica si tiene más peso en una componente que en otra. Por ejemplo, un vector horizontal nos indica que el atributo no cuenta para la segunda componente y un vector vertical que el atributo no cuenta para la primera componente. Por otro lado, si en el diagrama de dispersión aparecen muchos puntos aglomerados nos indica que las dos primeras componentes no son capaces de discriminar bien entre compañias, es decir no podemos identificar bien una compañia y separarlo de los otras usando los valores de las dos primeras componentes. En el caso de esta gráfica observamos muchos puntos muy pegados entre sí, lo que nos indica que el uso de las primeras dos componentes principales no permite una buena discriminación entre las compañias. Observamos que la variable vote_average es la que menos peso tiene en las dos primeras componentes (pues tiene asociado el vector más pequeño). La variable vote_count tiene mucho peso en la PC1 y poco en la PC2 (vector grande pegado a la horizontal).
+
+\n
+## Conclusión
+La soberanía de Estados Unidos en el mundo del cine es innegable, con Hollywood ejerciendo una influencia masiva en la producción y distribución de películas a nivel mundial. Este dominio no solo tiene implicaciones económicas, sino también repercusiones sociales y culturales significativas.
+
+El dominio estadounidense en el cine no solo implica la exportación masiva de películas, sino también la propagación de valores, narrativas y formas de pensar asociadas a la cultura estadounidense. Si bien esto puede ser enriquecedor en algunos aspectos, también plantea desafíos importantes en términos de diversidad cultural y representación. La falta de voces y perspectivas diversas en la industria puede llevar a una homogeneización de las narrativas cinematográficas y a la marginación de otras culturas y visiones del mundo.
+
+La disminución reciente de estrenos de películas en cines, intensificado por la pandemia de COVID-19, ha profundizado estas preocupaciones. A pesar de que la situación está cambiando gradualmente con el levantamiento de restricciones y la reapertura de cines, el panorama cinematográfico sigue enfrentando desafíos significativos. La migración hacia plataformas de streaming y la distribución digital ha reconfigurado la industria, desafiando el tradicional modelo de lanzamientos en cines y planteando interrogantes sobre la viabilidad de estas instituciones y el acceso equitativo a la cultura cinematográfica.
+
+Es fundamental reconocer cómo las películas no solo entretienen, sino que también influyen en nuestra mentalidad, nuestra forma de relacionarnos y nuestra percepción del mundo que nos rodea. Lo que vemos en películas y series puede moldear nuestra visión sobre eventos sociales, políticos y culturales, y esto está influenciado en gran medida por el dominio estadounidense en la producción cinematográfica. El predominio de Estados Unidos en el mundo del cine plantea importantes cuestionamientos sobre la diversidad cultural, la representación y la equidad en la industria.
