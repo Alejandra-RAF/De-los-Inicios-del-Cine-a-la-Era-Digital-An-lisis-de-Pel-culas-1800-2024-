@@ -1,0 +1,1 @@
+En el "Dashboard" y "Trabajo_final" se encuentra el código en R para el cuadro de mando y la visualización de gráficos, respectivamente. En el archivo comprimido "Visualización html" está la visualización completa en HTML, necesario por el tamaño del archivo debido a la cantidad de datos y gráficos incluidos.
